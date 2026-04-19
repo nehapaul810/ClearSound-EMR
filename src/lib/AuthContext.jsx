@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/lib/supabase';
 
 const AuthContext = createContext();
 
@@ -10,14 +10,30 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     checkAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (session?.user) {
+          setUser(session.user);
+          setIsAuthenticated(true);
+        } else {
+          setUser(null);
+          setIsAuthenticated(false);
+        }
+      }
+    );
+
+    return () => subscription?.unsubscribe();
   }, []);
 
   const checkAuth = async () => {
     try {
       setIsLoadingAuth(true);
-      const currentUser = await base44.auth.me();
-      setUser(currentUser);
-      setIsAuthenticated(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        setUser(session.user);
+        setIsAuthenticated(true);
+      }
     } catch {
       setUser(null);
       setIsAuthenticated(false);
@@ -27,25 +43,42 @@ export const AuthProvider = ({ children }) => {
   };
 
   const login = async (email, password) => {
-    const result = await base44.auth.loginViaEmailPassword(email, password);
-    if (result.access_token) {
-      const currentUser = await base44.auth.me();
-      setUser(currentUser);
-      setIsAuthenticated(true);
-    }
-    return result;
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (error) throw error;
+    setUser(data.user);
+    setIsAuthenticated(true);
+    return data;
   };
 
   const signup = async (email, password, fullName) => {
-    const result = await base44.auth.register({ email, password, full_name: fullName });
-    return result;
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: fullName,
+        },
+      },
+    });
+    if (error) throw error;
+
+    if (data.user) {
+      await supabase.from('profiles').insert({
+        id: data.user.id,
+        email,
+        full_name: fullName,
+      });
+    }
+
+    return data;
   };
 
   const logout = async () => {
-    try {
-      await base44.auth.logout();
-    } catch {
-    }
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
     setUser(null);
     setIsAuthenticated(false);
   };
