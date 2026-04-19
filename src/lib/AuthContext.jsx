@@ -12,7 +12,7 @@ export const AuthProvider = ({ children }) => {
     checkAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         if (session?.user) {
           setUser(session.user);
           setIsAuthenticated(true);
@@ -29,12 +29,18 @@ export const AuthProvider = ({ children }) => {
   const checkAuth = async () => {
     try {
       setIsLoadingAuth(true);
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error) throw error;
+
       if (session?.user) {
         setUser(session.user);
         setIsAuthenticated(true);
+      } else {
+        setUser(null);
+        setIsAuthenticated(false);
       }
-    } catch {
+    } catch (error) {
+      console.error('Auth check error:', error);
       setUser(null);
       setIsAuthenticated(false);
     } finally {
@@ -43,44 +49,62 @@ export const AuthProvider = ({ children }) => {
   };
 
   const login = async (email, password) => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    if (error) throw error;
-    setUser(data.user);
-    setIsAuthenticated(true);
-    return data;
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (error) throw error;
+      if (data.user) {
+        setUser(data.user);
+        setIsAuthenticated(true);
+      }
+      return data;
+    } catch (error) {
+      console.error('Login error:', error);
+      throw error;
+    }
   };
 
   const signup = async (email, password, fullName) => {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: fullName,
-        },
-      },
-    });
-    if (error) throw error;
-
-    if (data.user) {
-      await supabase.from('profiles').insert({
-        id: data.user.id,
+    try {
+      const { data, error } = await supabase.auth.signUp({
         email,
-        full_name: fullName,
+        password,
+        options: {
+          data: {
+            full_name: fullName,
+          },
+        },
       });
-    }
+      if (error) throw error;
 
-    return data;
+      if (data.user) {
+        const { error: profileError } = await supabase.from('profiles').insert({
+          id: data.user.id,
+          email,
+          full_name: fullName,
+        });
+        if (profileError) console.error('Profile creation error:', profileError);
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Signup error:', error);
+      throw error;
+    }
   };
 
   const logout = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
-    setUser(null);
-    setIsAuthenticated(false);
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      setUser(null);
+      setIsAuthenticated(false);
+    } catch (error) {
+      console.error('Logout error:', error);
+      throw error;
+    }
   };
 
   return (
